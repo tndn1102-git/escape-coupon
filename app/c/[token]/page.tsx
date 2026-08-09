@@ -1,7 +1,7 @@
 import QRCode from "qrcode";
 import { prisma } from "@/lib/db";
 import { couponUrl } from "@/lib/coupon";
-import { restrictionText } from "@/lib/restrict";
+import { restrictionText, fmtKSTFull } from "@/lib/restrict";
 import { isAuthed } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -90,9 +90,17 @@ export default async function CouponPage({
           )}
 
           {used && (
-            <Badge color="bg-[#4ad7d4] text-black">
-              이미 사용된 쿠폰입니다{coupon.store ? ` (${coupon.store.name})` : ""}
-            </Badge>
+            <div className="w-full space-y-2">
+              <Badge color="bg-[#4ad7d4] text-black">
+                이미 사용된 쿠폰입니다{coupon.store ? ` (${coupon.store.name})` : ""}
+              </Badge>
+              {/* 언제 사용 처리됐는지 — 문의가 오면 이 한 줄로 확인된다 */}
+              <p className="text-center text-sm font-bold text-slate-600">
+                {coupon.redeemedAt ? `${fmtKSTFull(coupon.redeemedAt)} 사용 처리` : "사용 처리 시각 미기록"}
+                {coupon.redeemedTheme ? ` · ${coupon.redeemedTheme}` : ""}
+                {coupon.redeemedPeople ? ` · ${coupon.redeemedPeople}인` : ""}
+              </p>
+            </div>
           )}
           {!used && expired && <Badge color="bg-[#ff5d8f] text-black">유효기간이 만료되었습니다</Badge>}
 

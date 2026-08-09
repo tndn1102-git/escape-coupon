@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { couponUrl } from "@/lib/coupon";
-import { fmtKSTDateTime } from "@/lib/restrict";
+import { fmtKSTDateTime, fmtKSTFull } from "@/lib/restrict";
 import { deleteCampaign, updateExpiry } from "../../actions";
 import AddCoupons from "./AddCoupons";
 import CopyBox from "./CopyBox";
@@ -129,9 +129,15 @@ export default async function CampaignDetail({
                   ) : (
                     <span className="nb-tag bg-white text-slate-400">미열람</span>
                   )}
-                  {/* 사용 여부 */}
+                  {/* 사용 여부 — 언제·어디서 처리됐는지 바로 보이게 */}
                   {c.status === "redeemed" ? (
-                    <span className="nb-tag bg-[#ff5d8f] text-white">사용됨 · {c.store?.name ?? "-"}</span>
+                    <span
+                      className="nb-tag bg-[#ff5d8f] text-white"
+                      title={redeemDetail(c.redeemedAt, c.redeemedTheme, c.redeemedPeople)}
+                    >
+                      사용됨 · {c.redeemedAt ? fmtKSTDateTime(c.redeemedAt) : "시각 미기록"}
+                      {c.store?.name ? ` · ${c.store.name}` : ""}
+                    </span>
                   ) : (
                     <span className="nb-tag bg-[#ffd23f]">미사용</span>
                   )}
@@ -143,6 +149,14 @@ export default async function CampaignDetail({
       </div>
     </main>
   );
+}
+
+// 사용 처리 배지의 마우스오버 설명 — 연도·요일까지 정확한 시각과 사용 상황
+function redeemDetail(at: Date | null, theme: string | null, people: number | null) {
+  const parts = [at ? `사용 처리 ${fmtKSTFull(at)}` : "사용 처리 시각이 기록되지 않은 쿠폰입니다"];
+  if (theme) parts.push(`테마: ${theme}`);
+  if (people) parts.push(`인원: ${people}명`);
+  return parts.join(" / ");
 }
 
 // 저장된 만료일(서버 UTC 기준 23:59:59)을 date input용 YYYY-MM-DD로 되돌린다.

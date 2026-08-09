@@ -13,6 +13,20 @@ export function fmtKSTDateTime(d: Date | string | null | undefined) {
   });
 }
 
+// 연도·요일까지 포함한 KST 전체 표기 (툴팁 등 정확한 시각이 필요한 곳)
+export function fmtKSTFull(d: Date | string | null | undefined) {
+  if (!d) return "";
+  return new Date(d).toLocaleString("ko-KR", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 // 서버 타임존과 무관하게 한국시간(KST) 기준 요일·시각
 export function kstNow() {
   const now = new Date();
