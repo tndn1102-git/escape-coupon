@@ -21,7 +21,11 @@ export default async function CampaignDetail({
 
   const campaign = await prisma.campaign.findUnique({
     where: { id },
-    include: { coupons: { orderBy: { createdAt: "asc" }, include: { store: true } } },
+    // 한 번에 발행한 쿠폰은 createdAt이 같아 정렬이 매번 뒤바뀐다 → id로 동점을 끊어
+    // 순서를 고정한다. 그래야 "#2의 기간을 바꿨다"가 새로고침 후에도 같은 줄을 가리킨다.
+    include: {
+      coupons: { orderBy: [{ createdAt: "asc" }, { id: "asc" }], include: { store: true } },
+    },
   });
   if (!campaign) notFound();
 
@@ -174,19 +178,21 @@ function ExpiryCell({ coupon }: { coupon: { id: string; expiresAt: Date | null }
   const soon =
     exp != null && !expired && new Date(exp).getTime() - now.getTime() < 7 * 24 * 60 * 60 * 1000;
 
+  // ⚠️ 색은 inline style로 준다. globals.css의 .nb-tag가 레이어 밖(unlayered)이라
+  // Tailwind의 bg-* 유틸(@layer utilities)이 절대 못 이긴다 — className으로 주면 전부 민트색이 된다.
   const chip = expired
-    ? "bg-[#ff5d8f] text-white"
+    ? { background: "#ff5d8f", color: "#fff" }
     : soon
-      ? "bg-[#ffd23f]"
+      ? { background: "#ffd23f" }
       : exp
-        ? "bg-white"
-        : "bg-white text-slate-400";
+        ? { background: "#fff" }
+        : { background: "#fff", color: "#94a3b8" };
 
   return (
     <details className="mt-1.5">
       <summary className="flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
         <span className="text-xs font-bold text-slate-500">유효기간</span>
-        <span className={`nb-tag ${chip}`} title="눌러서 이 쿠폰만 기간 변경">
+        <span className="nb-tag" style={chip} title="눌러서 이 쿠폰만 기간 변경">
           🗓 {expiryLabel(exp, expired)} ▾
         </span>
       </summary>
