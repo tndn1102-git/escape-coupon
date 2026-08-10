@@ -235,7 +235,7 @@ function ExpiryCell({ coupon }: { coupon: { id: string; expiresAt: Date | null }
   );
 }
 
-// 만료일 칩 문구. 저장값이 서버 UTC 23:59:59라 toDateInput과 같은 UTC 파트로 뽑아야
+// 만료일 칩 문구. toDateInput과 같은 UTC 파트 기준 —
 // 관리자가 입력한 날짜와 화면에 보이는 날짜가 어긋나지 않는다.
 function expiryLabel(d: Date | null, expired: boolean) {
   if (!d) return "무기한";
@@ -252,8 +252,8 @@ function redeemDetail(at: Date | null, theme: string | null, people: number | nu
   return parts.join(" / ");
 }
 
-// 저장된 만료일(서버 UTC 기준 23:59:59)을 date input용 YYYY-MM-DD로 되돌린다.
-// updateExpiry/createCampaign이 `raw + "T23:59:59"`로 만들므로 UTC 파트로 뽑아야 값이 왕복 일치한다.
+// 저장된 만료일을 date input용 YYYY-MM-DD로 되돌린다.
+// 저장값은 KST 그날 23:59:59(=UTC 14:59:59)이라 UTC 파트가 곧 한국 달력의 연·월·일이다.
 function toDateInput(d: Date | null | undefined) {
   if (!d) return "";
   const dt = new Date(d);

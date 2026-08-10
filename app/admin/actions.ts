@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { newToken, newCodeBatch, couponUrl } from "@/lib/coupon";
 import { ensureCoupon } from "@/lib/issue";
 import { normalizePhones } from "@/lib/phone";
+import { kstEndOfDay } from "@/lib/kst";
 import { messageForCampaign } from "@/lib/message";
 import { presetByCampaignName } from "@/lib/weekly";
 import { checkPassword, setSession, clearSession, isAuthed } from "@/lib/auth";
@@ -35,7 +36,8 @@ export async function createCampaign(_prev: unknown, formData: FormData) {
 
   if (!name || !benefit) return { error: "캠페인명과 혜택 내용을 입력하세요." };
 
-  const expiresAt = expiresRaw ? new Date(expiresRaw + "T23:59:59") : null;
+  const expiresAt = parseExpiry(expiresRaw);
+  if (expiresAt === undefined) return { error: "유효기간 날짜를 확인해 주세요." };
 
   // 사용 조건 (요일·시간·인원)
   const days = formData.getAll("days").map(String).filter(Boolean);
@@ -221,11 +223,17 @@ export async function cancelRedemption(formData: FormData) {
   revalidatePath("/admin");
 }
 
-// 만료일 문자열(YYYY-MM-DD) → 그 날짜 23:59:59까지. 빈 값이면 무기한(null).
+// 만료일 문자열(YYYY-MM-DD) → 그 날짜 "한국시간" 23:59:59까지. 빈 값이면 무기한(null).
 // 잘못된 날짜면 undefined를 돌려 호출부가 저장을 포기하게 한다(그대로 넘기면 Prisma가 터진다).
+//
+// ⚠️ `new Date(raw + "T23:59:59")`로 만들면 안 된다 — 오프셋이 없어 서버 로컬시간으로 해석되는데
+// Vercel 서버가 UTC라 실제로는 KST 다음날 08:59가 된다. 그래서 관리자가 12/25로 지정해도
+// 문자·고객화면에는 12/26으로 나갔다. 주간·생일 쿠폰이 쓰던 kstEndOfDay와 규칙을 맞춘다.
 function parseExpiry(raw: string) {
   if (!raw) return null;
-  const d = new Date(raw + "T23:59:59");
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!m) return undefined;
+  const d = kstEndOfDay(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   return isNaN(d.getTime()) ? undefined : d;
 }
 
