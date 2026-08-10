@@ -3,8 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { newToken, newCodeBatch } from "@/lib/coupon";
+import { newToken, newCodeBatch, couponUrl } from "@/lib/coupon";
 import { ensureCoupon } from "@/lib/issue";
+import { normalizePhones } from "@/lib/phone";
+import { messageForCampaign } from "@/lib/message";
+import { presetByCampaignName } from "@/lib/weekly";
 import { checkPassword, setSession, clearSession, isAuthed } from "@/lib/auth";
 
 export async function adminLogin(_prev: unknown, formData: FormData) {
@@ -269,6 +272,56 @@ export async function updateCouponExpiry(formData: FormData) {
 
   revalidatePath(`/admin/campaign/${coupon.campaignId}`);
   revalidatePath("/admin");
+}
+
+// 쿠폰 한 장 개별 발송 준비.
+// 번호가 없는 쿠폰이면 이 자리에서 받은 이름·번호를 쿠폰에 저장하고,
+// 그 쿠폰 한 장짜리 문자 본문을 만들어 돌려준다(문자앱은 클라이언트가 연다).
+export type CouponSendPrep = { ok: true; phone: string; message: string } | { ok: false; error: string };
+
+export async function prepareCouponSend(formData: FormData): Promise<CouponSendPrep> {
+  if (!(await isAuthed("admin"))) return { ok: false, error: "인증이 필요합니다." };
+
+  const couponId = String(formData.get("couponId") ?? "");
+  const rawPhone = String(formData.get("phone") ?? "").trim();
+  const rawName = String(formData.get("name") ?? "").trim();
+  if (!couponId) return { ok: false, error: "쿠폰을 찾을 수 없습니다." };
+
+  const coupon = await prisma.coupon.findUnique({
+    where: { id: couponId },
+    include: { campaign: true },
+  });
+  if (!coupon) return { ok: false, error: "쿠폰을 찾을 수 없습니다." };
+
+  let phone = coupon.sentTo;
+  let name = coupon.sentName;
+
+  // 번호를 새로 받았으면 저장한다 — 발송 화면·'번호지정' 집계에도 이후 그대로 잡힌다
+  if (rawPhone) {
+    const [normalized] = normalizePhones([rawPhone]);
+    if (!normalized) return { ok: false, error: "번호를 다시 확인해 주세요. (숫자 9~11자리)" };
+    phone = normalized;
+    name = rawName || coupon.sentName;
+    await prisma.coupon.update({
+      where: { id: couponId },
+      data: { sentTo: phone, sentName: name },
+    });
+    revalidatePath(`/admin/campaign/${coupon.campaignId}`);
+    revalidatePath("/admin");
+  }
+
+  if (!phone) return { ok: false, error: "받는 사람 번호를 입력해 주세요." };
+
+  const preset = presetByCampaignName(coupon.campaign.name);
+  const message = messageForCampaign(
+    coupon.campaign,
+    name,
+    [{ label: preset?.keyring ?? coupon.campaign.benefit, link: couponUrl(coupon.id) }],
+    // 캠페인이 아니라 이 쿠폰의 만료일을 쓴다 — 개별로 기간을 늘렸으면 문자에도 그 날짜가 나가야 한다
+    coupon.expiresAt,
+  );
+
+  return { ok: true, phone, message };
 }
 
 export async function deleteCampaign(formData: FormData) {

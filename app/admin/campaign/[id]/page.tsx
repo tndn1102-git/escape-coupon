@@ -4,8 +4,11 @@ import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { couponUrl } from "@/lib/coupon";
 import { fmtKSTDateTime, fmtKSTFull } from "@/lib/restrict";
+import { messageForCampaign } from "@/lib/message";
+import { presetByCampaignName } from "@/lib/weekly";
 import { deleteCampaign, updateExpiry, updateCouponExpiry } from "../../actions";
 import AddCoupons from "./AddCoupons";
+import CouponSend from "./CouponSend";
 import CopyBox from "./CopyBox";
 import RefreshButton from "./RefreshButton";
 
@@ -34,6 +37,19 @@ export default async function CampaignDetail({
   const sent = campaign.coupons.filter((c) => c.sentTo).length;
   const viewed = campaign.coupons.filter((c) => c.viewedAt).length;
   const redeemed = campaign.coupons.filter((c) => c.status === "redeemed").length;
+
+  // 개별 발송용 문자 본문 — 번호가 이미 있는 쿠폰만 미리 만들어 둔다(누르면 바로 열리게).
+  // 번호 없는 쿠폰은 번호를 받은 뒤에야 "○○님" 인사를 넣을 수 있어 서버 액션에서 만든다.
+  const preset = presetByCampaignName(campaign.name);
+  const sendLabel = preset?.keyring ?? campaign.benefit;
+  const messages = new Map(
+    campaign.coupons
+      .filter((c) => c.sentTo)
+      .map((c) => [
+        c.id,
+        messageForCampaign(campaign, c.sentName, [{ label: sendLabel, link: couponUrl(c.id) }], c.expiresAt),
+      ]),
+  );
 
   return (
     <main className="min-h-screen bg-[#fff7e0] p-6">
@@ -159,6 +175,9 @@ export default async function CampaignDetail({
 
                 {/* 이 쿠폰만의 유효기간 — 칩을 누르면 그 자리에서 날짜 입력이 열린다(JS 없이 details로) */}
                 <ExpiryCell coupon={c} />
+
+                {/* 이 쿠폰 한 장만 문자로 보내기 */}
+                <CouponSend couponId={c.id} phone={c.sentTo} message={messages.get(c.id) ?? null} />
               </div>
             ))}
           </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { copyText } from "@/lib/clipboard";
 import { formatPhone } from "@/lib/kst";
+import { smsHref } from "@/lib/sms";
 
 export type SendItem = { label: string; link: string; code: string | null };
 export type SendRow = {
@@ -24,19 +25,13 @@ export default function SendList({ rows }: { rows: SendRow[] }) {
     setIsIOS(/iPhone|iPad|iPod/.test(navigator.userAgent));
   }, []);
 
-  // 플랫폼별 SMS 딥링크 (iOS는 &body=, Android는 ?body=)
-  function smsHref(phone: string, message: string) {
-    const sep = isIOS ? "&" : "?";
-    return `sms:${phone}${sep}body=${encodeURIComponent(message)}`;
-  }
-
   const next = rows[idx];
 
   return (
     <div className="space-y-3">
       {next ? (
         <a
-          href={smsHref(next.phone, next.message)}
+          href={smsHref(next.phone, next.message, isIOS)}
           // 이 앵커의 href는 idx에 따라 바뀐다. 클릭 핸들러에서 곧바로 idx를 올리면
           // 리액트가 브라우저의 기본 이동보다 먼저 href를 '다음 사람' 것으로 바꿔버려
           // 1번이 건너뛰어지고 2번이 열린다. 이동이 시작된 뒤로 순번 갱신을 미룬다.
@@ -62,7 +57,7 @@ export default function SendList({ rows }: { rows: SendRow[] }) {
 
       <div className="space-y-3 pt-1">
         {rows.map((r, i) => (
-          <Row key={r.phone} row={r} href={smsHref(r.phone, r.message)} done={i < idx} current={i === idx} />
+          <Row key={r.phone} row={r} href={smsHref(r.phone, r.message, isIOS)} done={i < idx} current={i === idx} />
         ))}
       </div>
 
