@@ -6,6 +6,10 @@ import { copyText } from "@/lib/clipboard";
 import { smsHref } from "@/lib/sms";
 import { prepareCouponSend } from "../../actions";
 
+// 한 줄에 나란히 놓기 위한 입력칸 크기.
+// globals.css의 .nb-input이 cascade layer 밖이라 Tailwind의 w-*/p-* 유틸이 못 이긴다.
+const compact = (width: number) => ({ width, padding: "6px 8px" });
+
 // 쿠폰 한 장만 보내는 버튼.
 // 번호가 있으면 바로 문자앱을 열고, 없으면 이 자리에서 이름·번호를 받아 저장한 뒤 연다.
 // (일괄발송 화면과 달리 한 사람이 여러 장을 갖고 있어도 이 한 장만 나간다)
@@ -83,12 +87,14 @@ export default function CouponSend({
       className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-[10px] border-2 border-dashed border-black/25 bg-[#fff7e0] p-2"
     >
       <input type="hidden" name="couponId" value={couponId} />
-      <input name="name" placeholder="이름(선택)" className="nb-input w-24 px-2 py-1 text-xs" />
+      {/* 폭·여백도 inline style로 — .nb-input(레이어 밖)의 width:100%·padding을 Tailwind가 못 이긴다 */}
+      <input name="name" placeholder="이름(선택)" className="nb-input text-xs" style={compact(96)} />
       <input
         name="phone"
         inputMode="numeric"
         placeholder="010-0000-0000"
-        className="nb-input w-36 px-2 py-1 text-xs"
+        className="nb-input text-xs"
+        style={compact(148)}
       />
       <button disabled={busy} className="nb-btn nb-btn-sm nb-btn-secondary">
         {busy ? "여는 중…" : "📨 보내기"}

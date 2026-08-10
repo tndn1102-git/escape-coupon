@@ -224,7 +224,9 @@ function ExpiryCell({ coupon }: { coupon: { id: string; expiresAt: Date | null }
           type="date"
           name="expiresAt"
           defaultValue={toDateInput(exp)}
-          className="nb-input w-auto px-2 py-1 text-xs"
+          className="nb-input text-xs"
+          // .nb-input(레이어 밖)의 width:100%·padding은 Tailwind 유틸로 못 덮는다
+          style={{ width: 148, padding: "6px 8px" }}
         />
         <button className="nb-btn nb-btn-sm nb-btn-dark">저장</button>
         <button name="clear" value="1" className="nb-btn nb-btn-sm nb-btn-white">
