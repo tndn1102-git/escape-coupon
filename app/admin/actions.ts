@@ -218,15 +218,24 @@ export async function cancelRedemption(formData: FormData) {
   revalidatePath("/admin");
 }
 
+// 만료일 문자열(YYYY-MM-DD) → 그 날짜 23:59:59까지. 빈 값이면 무기한(null).
+// 잘못된 날짜면 undefined를 돌려 호출부가 저장을 포기하게 한다(그대로 넘기면 Prisma가 터진다).
+function parseExpiry(raw: string) {
+  if (!raw) return null;
+  const d = new Date(raw + "T23:59:59");
+  return isNaN(d.getTime()) ? undefined : d;
+}
+
 // 발행된 쿠폰 유효기간 일괄 변경 — 캠페인 만료일과 소속 쿠폰 전체의 만료일을 함께 갱신
+// ⚠️ 개별로 따로 지정해둔 쿠폰의 기간까지 전부 덮어쓴다 (화면에도 그렇게 안내함)
 export async function updateExpiry(formData: FormData) {
   if (!(await isAuthed("admin"))) return;
   const id = String(formData.get("id") ?? "");
   const raw = String(formData.get("expiresAt") ?? "").trim();
   if (!id) return;
 
-  // 빈 값이면 무기한(null), 아니면 그 날짜 23:59:59까지 (캠페인 생성과 동일 규칙)
-  const expiresAt = raw ? new Date(raw + "T23:59:59") : null;
+  const expiresAt = parseExpiry(raw);
+  if (expiresAt === undefined) return;
 
   await prisma.$transaction([
     prisma.campaign.update({ where: { id }, data: { expiresAt } }),
@@ -234,6 +243,31 @@ export async function updateExpiry(formData: FormData) {
   ]);
 
   revalidatePath(`/admin/campaign/${id}`);
+  revalidatePath("/admin");
+}
+
+// 쿠폰 한 장만 유효기간 변경 — 일괄 변경과 달리 캠페인·다른 쿠폰은 건드리지 않는다.
+// 고객 화면(/c/[token])과 사용처리(api/redeem)는 캠페인이 아니라 이 쿠폰 값으로 만료를 판정한다.
+export async function updateCouponExpiry(formData: FormData) {
+  if (!(await isAuthed("admin"))) return;
+  const couponId = String(formData.get("couponId") ?? "");
+  const raw = String(formData.get("expiresAt") ?? "").trim();
+  // '무기한' 버튼이 clear=1을 함께 보낸다 — 날짜칸을 비우지 않아도 무기한이 된다
+  const clear = String(formData.get("clear") ?? "") === "1";
+  if (!couponId) return;
+
+  const coupon = await prisma.coupon.findUnique({
+    where: { id: couponId },
+    select: { campaignId: true },
+  });
+  if (!coupon) return;
+
+  const expiresAt = clear ? null : parseExpiry(raw);
+  if (expiresAt === undefined) return;
+
+  await prisma.coupon.update({ where: { id: couponId }, data: { expiresAt } });
+
+  revalidatePath(`/admin/campaign/${coupon.campaignId}`);
   revalidatePath("/admin");
 }
 

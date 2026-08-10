@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { couponUrl } from "@/lib/coupon";
 import { fmtKSTDateTime, fmtKSTFull } from "@/lib/restrict";
-import { deleteCampaign, updateExpiry } from "../../actions";
+import { deleteCampaign, updateExpiry, updateCouponExpiry } from "../../actions";
 import AddCoupons from "./AddCoupons";
 import CopyBox from "./CopyBox";
 import RefreshButton from "./RefreshButton";
@@ -56,10 +56,10 @@ export default async function CampaignDetail({
             </form>
           </div>
 
-          {/* 발행된 쿠폰 전체의 유효기간 일괄 변경 */}
+          {/* 발행된 쿠폰 전체의 유효기간 일괄 변경 — 한 장만 바꾸는 건 아래 쿠폰 목록에서 */}
           <form action={updateExpiry} className="mt-4 flex flex-wrap items-center gap-2 border-t-2 border-black/10 pt-4">
             <input type="hidden" name="id" value={campaign.id} />
-            <label className="text-sm font-bold text-slate-600">유효기간 변경</label>
+            <label className="text-sm font-bold text-slate-600">전체 일괄 변경</label>
             <input
               type="date"
               name="expiresAt"
@@ -67,7 +67,12 @@ export default async function CampaignDetail({
               className="nb-input px-3 py-1.5 text-sm"
             />
             <button className="nb-btn nb-btn-sm nb-btn-white font-bold">적용</button>
-            <span className="text-xs text-slate-400">비우고 적용하면 무기한 · 발행된 쿠폰 {total}장에 모두 반영</span>
+            <span className="w-full text-xs text-slate-400">
+              비우고 적용하면 무기한 · 발행된 쿠폰 {total}장에 모두 반영됩니다.
+              <br />
+              <strong className="text-[#ff5d8f]">⚠️ 아래에서 한 장씩 따로 지정한 기간도 전부 덮어씁니다</strong> — 한 명만
+              연장하려면 쿠폰 목록에서 그 쿠폰의 기간 칩을 누르세요.
+            </span>
           </form>
         </header>
 
@@ -109,39 +114,47 @@ export default async function CampaignDetail({
         </section>
 
         <section className="nb-card p-6">
-          <h2 className="font-extrabold text-[#111] mb-3">쿠폰 목록</h2>
+          <h2 className="font-extrabold text-[#111] mb-1">쿠폰 목록</h2>
+          <p className="text-xs text-slate-400 mb-3">
+            기간 칩(🗓)을 누르면 <strong>그 쿠폰 한 장의 유효기간만</strong> 바꿀 수 있어요.
+          </p>
           <div className="divide-y-2 divide-black/10">
             {campaign.coupons.map((c, i) => (
-              <div key={c.id} className="flex items-center justify-between gap-2 py-2.5 text-sm">
-                <Link
-                  href={`/c/${c.id}`}
-                  target="_blank"
-                  className="text-slate-700 hover:underline truncate min-w-0 flex-1"
-                >
-                  #{i + 1} {c.sentTo ? `→ ${c.sentTo}` : <span className="font-mono">{c.id}</span>}
-                </Link>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {/* 열람 여부 */}
-                  {c.viewedAt ? (
-                    <span className="nb-tag bg-[#4ad7d4]" title={`${c.viewCount}회 열람`}>
-                      👁 열람 {fmtKSTDateTime(c.viewedAt)}
-                    </span>
-                  ) : (
-                    <span className="nb-tag bg-white text-slate-400">미열람</span>
-                  )}
-                  {/* 사용 여부 — 언제·어디서 처리됐는지 바로 보이게 */}
-                  {c.status === "redeemed" ? (
-                    <span
-                      className="nb-tag bg-[#ff5d8f] text-white"
-                      title={redeemDetail(c.redeemedAt, c.redeemedTheme, c.redeemedPeople)}
-                    >
-                      사용됨 · {c.redeemedAt ? fmtKSTDateTime(c.redeemedAt) : "시각 미기록"}
-                      {c.store?.name ? ` · ${c.store.name}` : ""}
-                    </span>
-                  ) : (
-                    <span className="nb-tag bg-[#ffd23f]">미사용</span>
-                  )}
+              <div key={c.id} className="py-2.5 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <Link
+                    href={`/c/${c.id}`}
+                    target="_blank"
+                    className="text-slate-700 hover:underline truncate min-w-0 flex-1"
+                  >
+                    #{i + 1} {c.sentTo ? `→ ${c.sentTo}` : <span className="font-mono">{c.id}</span>}
+                  </Link>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* 열람 여부 */}
+                    {c.viewedAt ? (
+                      <span className="nb-tag bg-[#4ad7d4]" title={`${c.viewCount}회 열람`}>
+                        👁 열람 {fmtKSTDateTime(c.viewedAt)}
+                      </span>
+                    ) : (
+                      <span className="nb-tag bg-white text-slate-400">미열람</span>
+                    )}
+                    {/* 사용 여부 — 언제·어디서 처리됐는지 바로 보이게 */}
+                    {c.status === "redeemed" ? (
+                      <span
+                        className="nb-tag bg-[#ff5d8f] text-white"
+                        title={redeemDetail(c.redeemedAt, c.redeemedTheme, c.redeemedPeople)}
+                      >
+                        사용됨 · {c.redeemedAt ? fmtKSTDateTime(c.redeemedAt) : "시각 미기록"}
+                        {c.store?.name ? ` · ${c.store.name}` : ""}
+                      </span>
+                    ) : (
+                      <span className="nb-tag bg-[#ffd23f]">미사용</span>
+                    )}
+                  </div>
                 </div>
+
+                {/* 이 쿠폰만의 유효기간 — 칩을 누르면 그 자리에서 날짜 입력이 열린다(JS 없이 details로) */}
+                <ExpiryCell coupon={c} />
               </div>
             ))}
           </div>
@@ -149,6 +162,61 @@ export default async function CampaignDetail({
       </div>
     </main>
   );
+}
+
+// 쿠폰 한 장의 유효기간 칩 + 펼치면 나오는 개별 변경 폼.
+// 클라이언트 JS 없이 <details>로 접었다 펴서, 목록이 길어져도 화면이 안 무너지게 한다.
+function ExpiryCell({ coupon }: { coupon: { id: string; expiresAt: Date | null } }) {
+  const exp = coupon.expiresAt;
+  const now = new Date();
+  const expired = exp != null && new Date(exp) < now;
+  // 만료 임박(7일 이내)이면 노랑으로 눈에 띄게 — 연장 대상 쿠폰을 목록에서 바로 골라낼 수 있다
+  const soon =
+    exp != null && !expired && new Date(exp).getTime() - now.getTime() < 7 * 24 * 60 * 60 * 1000;
+
+  const chip = expired
+    ? "bg-[#ff5d8f] text-white"
+    : soon
+      ? "bg-[#ffd23f]"
+      : exp
+        ? "bg-white"
+        : "bg-white text-slate-400";
+
+  return (
+    <details className="mt-1.5">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+        <span className="text-xs font-bold text-slate-500">유효기간</span>
+        <span className={`nb-tag ${chip}`} title="눌러서 이 쿠폰만 기간 변경">
+          🗓 {expiryLabel(exp, expired)} ▾
+        </span>
+      </summary>
+      <form
+        action={updateCouponExpiry}
+        className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-[10px] border-2 border-dashed border-black/25 bg-[#fff7e0] p-2"
+      >
+        <input type="hidden" name="couponId" value={coupon.id} />
+        <input
+          type="date"
+          name="expiresAt"
+          defaultValue={toDateInput(exp)}
+          className="nb-input w-auto px-2 py-1 text-xs"
+        />
+        <button className="nb-btn nb-btn-sm nb-btn-dark">저장</button>
+        <button name="clear" value="1" className="nb-btn nb-btn-sm nb-btn-white">
+          무기한
+        </button>
+      </form>
+    </details>
+  );
+}
+
+// 만료일 칩 문구. 저장값이 서버 UTC 23:59:59라 toDateInput과 같은 UTC 파트로 뽑아야
+// 관리자가 입력한 날짜와 화면에 보이는 날짜가 어긋나지 않는다.
+function expiryLabel(d: Date | null, expired: boolean) {
+  if (!d) return "무기한";
+  const dt = new Date(d);
+  const text = `${dt.getUTCMonth() + 1}. ${dt.getUTCDate()}.`;
+  return expired ? `만료됨 ${text}` : `~ ${text}`;
 }
 
 // 사용 처리 배지의 마우스오버 설명 — 연도·요일까지 정확한 시각과 사용 상황
