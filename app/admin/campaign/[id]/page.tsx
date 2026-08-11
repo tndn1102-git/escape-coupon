@@ -129,10 +129,7 @@ export default async function CampaignDetail({
         </section>
 
         {/* 추가 발행분에 붙을 만료일을 미리 보여준다(force-dynamic이라 접속 시각 기준으로 매번 새로 계산) */}
-        <AddCoupons
-          id={campaign.id}
-          expiresLabel={campaign.expiresAt === null ? null : fmtKSTDate(expiryFrom(new Date()))}
-        />
+        <AddCoupons id={campaign.id} expiresLabel={fmtKSTDate(expiryFrom(new Date()))} />
 
         <section className="nb-card p-6">
           <CopyBox links={links} />

@@ -121,7 +121,7 @@ export type AddResult = {
 // 유효기간만은 상속하지 않는다 — 캠페인 만료일은 처음 발행할 때 기준이라,
 // 한 달 뒤에 추가로 받은 사람은 며칠짜리(심하면 이미 만료된) 쿠폰을 받게 된다.
 // 그래서 추가 발행분은 발행한 날로부터 1개월(KST 그날 23:59:59)로 새로 잡는다.
-// 무기한 캠페인은 기한을 새로 만들지 않고 그대로 무기한으로 둔다.
+// 캠페인이 무기한이어도 예외 없이 1개월이다 — 추가 발행분은 항상 한 달짜리로 통일한다.
 export async function addCoupons(_prev: unknown, formData: FormData): Promise<AddResult> {
   if (!(await isAuthed("admin"))) return { error: "인증이 필요합니다." };
 
@@ -130,7 +130,7 @@ export async function addCoupons(_prev: unknown, formData: FormData): Promise<Ad
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   if (!campaign) return { error: "캠페인을 찾을 수 없습니다." };
 
-  const expiresAt = campaign.expiresAt === null ? null : expiryFrom(new Date());
+  const expiresAt = expiryFrom(new Date());
 
   // 수량만 추가 — 번호 없는 익명 쿠폰(링크 복사·현장 배포용)
   if (mode === "count") {
