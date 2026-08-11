@@ -5,7 +5,8 @@ import { requireAuth } from "@/lib/auth";
 import { couponUrl } from "@/lib/coupon";
 import { fmtKSTDateTime, fmtKSTFull } from "@/lib/restrict";
 import { messageForCampaign } from "@/lib/message";
-import { presetByCampaignName } from "@/lib/weekly";
+import { presetByCampaignName, expiryFrom } from "@/lib/weekly";
+import { fmtKSTDate } from "@/lib/kst";
 import { deleteCampaign, updateExpiry, updateCouponExpiry } from "../../actions";
 import AddCoupons from "./AddCoupons";
 import CouponSend from "./CouponSend";
@@ -127,7 +128,11 @@ export default async function CampaignDetail({
           )}
         </section>
 
-        <AddCoupons id={campaign.id} />
+        {/* 추가 발행분에 붙을 만료일을 미리 보여준다(force-dynamic이라 접속 시각 기준으로 매번 새로 계산) */}
+        <AddCoupons
+          id={campaign.id}
+          expiresLabel={campaign.expiresAt === null ? null : fmtKSTDate(expiryFrom(new Date()))}
+        />
 
         <section className="nb-card p-6">
           <CopyBox links={links} />

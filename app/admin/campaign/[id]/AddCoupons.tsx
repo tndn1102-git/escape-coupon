@@ -5,8 +5,9 @@ import { useActionState, useState } from "react";
 import { addCoupons, type AddResult } from "../../actions";
 
 // 이미 만들어진 캠페인에 쿠폰을 더 발행하는 폼.
-// 혜택·유효기간·안내는 캠페인 것을 그대로 쓰므로 다시 입력받지 않는다.
-export default function AddCoupons({ id }: { id: string }) {
+// 혜택·안내는 캠페인 것을 그대로 쓰므로 다시 입력받지 않는다.
+// 유효기간은 캠페인 만료일이 아니라 "발행일 + 1개월"로 새로 잡힌다(expiresLabel = 그 날짜).
+export default function AddCoupons({ id, expiresLabel }: { id: string; expiresLabel: string | null }) {
   const [state, action, pending] = useActionState<AddResult, FormData>(addCoupons, {});
   const [mode, setMode] = useState<"list" | "count">("list");
 
@@ -18,7 +19,15 @@ export default function AddCoupons({ id }: { id: string }) {
       <div>
         <h2 className="font-extrabold text-[#111]">➕ 쿠폰 추가 발행</h2>
         <p className="text-sm text-slate-600 mt-1">
-          이 캠페인에 쿠폰을 더 만듭니다. 혜택·유효기간·안내는 그대로 적용됩니다.
+          이 캠페인에 쿠폰을 더 만듭니다. 혜택·안내는 그대로 적용됩니다.
+        </p>
+        <p className="mt-2 text-sm font-bold text-[#111]">
+          🗓 유효기간은 <span className="nb-tag bg-[#ffd23f]">오늘부터 1개월</span>
+          {expiresLabel ? ` — ${expiresLabel}까지` : " (이 캠페인은 무기한이라 추가분도 무기한)"}
+        </p>
+        <p className="text-xs text-slate-500 mt-1">
+          캠페인 만료일을 물려받지 않습니다 — 늦게 받은 분도 한 달을 온전히 씁니다. 발행 후 쿠폰 목록에서 한 장씩
+          바꿀 수 있어요.
         </p>
       </div>
 
@@ -48,7 +57,7 @@ export default function AddCoupons({ id }: { id: string }) {
               번호만 써도 됩니다.
               <br />
               <b className="text-black">이미 발급된 번호는 건너뜁니다</b> — 같은 명단을 다시 넣어도 중복 발급되지
-              않아요.
+              않아요(건너뛴 쿠폰은 원래 기간 그대로).
             </p>
           </>
         ) : (

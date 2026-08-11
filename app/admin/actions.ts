@@ -8,7 +8,7 @@ import { ensureCoupon } from "@/lib/issue";
 import { normalizePhones } from "@/lib/phone";
 import { kstEndOfDay } from "@/lib/kst";
 import { messageForCampaign } from "@/lib/message";
-import { presetByCampaignName } from "@/lib/weekly";
+import { presetByCampaignName, expiryFrom } from "@/lib/weekly";
 import { checkPassword, setSession, clearSession, isAuthed } from "@/lib/auth";
 
 export async function adminLogin(_prev: unknown, formData: FormData) {
@@ -116,7 +116,12 @@ export type AddResult = {
 };
 
 // 이미 만들어진 캠페인에 쿠폰을 더 발행한다.
-// 혜택·유효기간·안내는 캠페인 것을 그대로 상속하므로 다시 입력받지 않는다.
+// 혜택·안내는 캠페인 것을 그대로 상속하므로 다시 입력받지 않는다.
+//
+// 유효기간만은 상속하지 않는다 — 캠페인 만료일은 처음 발행할 때 기준이라,
+// 한 달 뒤에 추가로 받은 사람은 며칠짜리(심하면 이미 만료된) 쿠폰을 받게 된다.
+// 그래서 추가 발행분은 발행한 날로부터 1개월(KST 그날 23:59:59)로 새로 잡는다.
+// 무기한 캠페인은 기한을 새로 만들지 않고 그대로 무기한으로 둔다.
 export async function addCoupons(_prev: unknown, formData: FormData): Promise<AddResult> {
   if (!(await isAuthed("admin"))) return { error: "인증이 필요합니다." };
 
@@ -124,6 +129,8 @@ export async function addCoupons(_prev: unknown, formData: FormData): Promise<Ad
   const mode = String(formData.get("mode") ?? "list");
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
   if (!campaign) return { error: "캠페인을 찾을 수 없습니다." };
+
+  const expiresAt = campaign.expiresAt === null ? null : expiryFrom(new Date());
 
   // 수량만 추가 — 번호 없는 익명 쿠폰(링크 복사·현장 배포용)
   if (mode === "count") {
@@ -137,7 +144,7 @@ export async function addCoupons(_prev: unknown, formData: FormData): Promise<Ad
         id: newToken(),
         code: codes[i],
         campaignId,
-        expiresAt: campaign.expiresAt,
+        expiresAt,
       }));
       try {
         await prisma.coupon.createMany({ data: rows });
@@ -181,7 +188,7 @@ export async function addCoupons(_prev: unknown, formData: FormData): Promise<Ad
       campaignId,
       phone: t.phone,
       name: t.name,
-      expiresAt: campaign.expiresAt,
+      expiresAt,
     });
     if (created) {
       added++;
