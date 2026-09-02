@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { couponUrl } from "@/lib/coupon";
-import { fmtKSTDate } from "@/lib/kst";
+import { fmtKSTDate, toKST } from "@/lib/kst";
 import { messageForCampaign } from "@/lib/message";
+import { gatewayConfigured } from "@/lib/smsgate";
 import { presetByCampaignName } from "@/lib/weekly";
 import SendList, { type SendRow } from "../../SendList";
 
@@ -27,7 +28,16 @@ export default async function DispatchPage({ params }: { params: Promise<{ id: s
       coupons: {
         where: { sentTo: { not: null } },
         orderBy: { createdAt: "asc" },
-        select: { id: true, code: true, status: true, viewedAt: true, sentTo: true, sentName: true, expiresAt: true },
+        select: {
+          id: true,
+          code: true,
+          status: true,
+          viewedAt: true,
+          sentTo: true,
+          sentName: true,
+          expiresAt: true,
+          gwSentAt: true,
+        },
       },
     },
   });
@@ -35,15 +45,25 @@ export default async function DispatchPage({ params }: { params: Promise<{ id: s
 
   const preset = presetByCampaignName(campaign.name);
 
+  // "9/2 14:32" — 자동발송 배지용 짧은 시각
+  const fmtShort = (d: Date) => {
+    const k = toKST(d);
+    return `${k.getUTCMonth() + 1}/${k.getUTCDate()} ${String(k.getUTCHours()).padStart(2, "0")}:${String(
+      k.getUTCMinutes(),
+    ).padStart(2, "0")}`;
+  };
+
   const grouped = new Map<string, SendRow>();
   for (const c of campaign.coupons) {
     const phone = c.sentTo!;
     const row =
-      grouped.get(phone) ?? ({ phone, name: c.sentName, message: "", items: [], redeemed: 0, viewed: 0 } as SendRow);
+      grouped.get(phone) ??
+      ({ phone, name: c.sentName, message: "", items: [], redeemed: 0, viewed: 0, autoSent: null } as SendRow);
     row.items.push({ label: preset?.keyring ?? campaign.benefit, link: couponUrl(c.id), code: c.code });
     if (!row.name && c.sentName) row.name = c.sentName;
     if (c.status === "redeemed") row.redeemed++;
     if (c.viewedAt) row.viewed++;
+    if (c.gwSentAt) row.autoSent = fmtShort(c.gwSentAt);
     row.message = messageForCampaign(campaign, row.name, row.items, c.expiresAt);
     grouped.set(phone, row);
   }
@@ -76,7 +96,7 @@ export default async function DispatchPage({ params }: { params: Promise<{ id: s
             </p>
           </div>
         ) : (
-          <SendList rows={rows} />
+          <SendList rows={rows} campaignId={campaign.id} gatewayOn={gatewayConfigured()} />
         )}
       </div>
     </main>

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { copyText } from "@/lib/clipboard";
 import { formatPhone } from "@/lib/kst";
 import { smsHref } from "@/lib/sms";
+import { autoSendPerson, testGatewaySend } from "./actions";
 
 export type SendItem = { label: string; link: string; code: string | null };
 export type SendRow = {
@@ -13,11 +14,22 @@ export type SendRow = {
   items: SendItem[];
   redeemed: number;
   viewed: number;
+  autoSent?: string | null; // 폰 게이트웨이 자동발송 시각 라벨 ("9/2 14:32"), 미발송이면 null
 };
 
 // 발송 목록 — 번호 입력 없이, 이미 발급된 쿠폰을 사람별로 한 통씩 보낸다.
 // 주간·생일 등 어떤 캠페인이든 같은 화면을 쓴다.
-export default function SendList({ rows }: { rows: SendRow[] }) {
+// campaignId + gatewayOn이 오면(캠페인 발송 화면) 폰 게이트웨이 자동발송 카드가 붙는다.
+// 주간 화면은 한 사람이 여러 캠페인 쿠폰을 한 통으로 받아 캠페인 단위 발송이 안 맞으므로 수동 그대로.
+export default function SendList({
+  rows,
+  campaignId,
+  gatewayOn,
+}: {
+  rows: SendRow[];
+  campaignId?: string;
+  gatewayOn?: boolean;
+}) {
   const [isIOS, setIsIOS] = useState(false);
   const [idx, setIdx] = useState(0); // 일괄발송 진행 위치(다음 보낼 사람)
 
@@ -29,6 +41,8 @@ export default function SendList({ rows }: { rows: SendRow[] }) {
 
   return (
     <div className="space-y-3">
+      {gatewayOn && campaignId && <AutoSend campaignId={campaignId} rows={rows} />}
+
       {next ? (
         <a
           href={smsHref(next.phone, next.message, isIOS)}
@@ -68,6 +82,134 @@ export default function SendList({ rows }: { rows: SendRow[] }) {
   );
 }
 
+// 폰 게이트웨이 자동발송 — 매장 안드로이드 폰(SMSGate 앱)이 문자를 대신 보낸다.
+// 여기서는 서버 큐에 넣기만 하고, 실제 전송 간격은 폰 앱의 지연 설정이 조절한다.
+function AutoSend({ campaignId, rows }: { campaignId: string; rows: SendRow[] }) {
+  const [phase, setPhase] = useState<"idle" | "confirm" | "running" | "done">("idle");
+  const [sentNow, setSentNow] = useState<Record<string, true>>({}); // 이번 세션에서 성공한 번호
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [pos, setPos] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [testPhone, setTestPhone] = useState("");
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const pending = rows.filter((r) => !r.autoSent && !sentNow[r.phone]);
+  const failed = rows.filter((r) => errors[r.phone]);
+
+  async function run(targets: SendRow[]) {
+    setPhase("running");
+    setErrors({});
+    setTotal(targets.length);
+    for (let i = 0; i < targets.length; i++) {
+      setPos(i + 1);
+      const fd = new FormData();
+      fd.set("campaignId", campaignId);
+      fd.set("phone", targets[i].phone);
+      try {
+        const res = await autoSendPerson(fd);
+        if (res.ok) setSentNow((s) => ({ ...s, [targets[i].phone]: true }));
+        else setErrors((e) => ({ ...e, [targets[i].phone]: res.error }));
+      } catch {
+        setErrors((e) => ({ ...e, [targets[i].phone]: "네트워크 오류 — 다시 시도해 주세요." }));
+      }
+    }
+    setPhase("done");
+  }
+
+  async function test() {
+    setTesting(true);
+    setTestMsg(null);
+    const fd = new FormData();
+    fd.set("phone", testPhone);
+    try {
+      const res = await testGatewaySend(fd);
+      setTestMsg(res.ok ? "✅ 큐에 넣었습니다 — 잠시 후 그 번호로 문자가 오는지 확인하세요." : `❌ ${res.error}`);
+    } catch {
+      setTestMsg("❌ 네트워크 오류");
+    }
+    setTesting(false);
+  }
+
+  return (
+    <div className="nb-card-sm p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="font-extrabold text-black">📡 자동발송</span>
+        <span className="text-xs font-bold text-slate-500">매장 폰이 순서대로 전송 · 남은 {pending.length}명</span>
+      </div>
+
+      {phase === "idle" && pending.length > 0 && (
+        <button type="button" onClick={() => setPhase("confirm")} className="nb-btn nb-btn-secondary w-full">
+          📡 {pending.length}명 전체 자동발송
+        </button>
+      )}
+      {phase === "idle" && pending.length === 0 && (
+        <p className="text-xs font-bold text-slate-600">✅ 전원 자동발송 완료 (또는 보낼 대상 없음)</p>
+      )}
+
+      {phase === "confirm" && (
+        <div className="flex gap-2">
+          <button type="button" onClick={() => run(pending)} className="nb-btn nb-btn-primary flex-1">
+            정말 {pending.length}명에게 보내기
+          </button>
+          <button type="button" onClick={() => setPhase("idle")} className="nb-btn flex-1">
+            취소
+          </button>
+        </div>
+      )}
+
+      {phase === "running" && (
+        <p className="text-sm font-extrabold text-black">
+          큐에 넣는 중… {pos}/{total}
+        </p>
+      )}
+
+      {phase === "done" && (
+        <div className="space-y-1">
+          <p className="text-sm font-extrabold text-black">
+            ✅ {total - failed.length}명 큐 등록 완료{failed.length > 0 ? ` · ❌ 실패 ${failed.length}명` : ""}
+          </p>
+          <p className="text-xs text-slate-600">
+            폰이 설정된 간격으로 하나씩 전송합니다. 폰 화면(SMSGate 앱)에서 진행 상황을 볼 수 있어요.
+          </p>
+          {failed.length > 0 && (
+            <>
+              <ul className="text-xs text-slate-700 list-disc pl-4">
+                {failed.map((r) => (
+                  <li key={r.phone}>
+                    <b>{r.name ?? formatPhone(r.phone)}</b> — {errors[r.phone]}
+                  </li>
+                ))}
+              </ul>
+              <button type="button" onClick={() => run(failed)} className="nb-btn nb-btn-sm nb-btn-yellow">
+                실패한 {failed.length}명만 재시도
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      <details className="text-xs">
+        <summary className="font-bold text-slate-500 cursor-pointer">게이트웨이 연결 테스트</summary>
+        <div className="flex gap-2 mt-2">
+          <input
+            value={testPhone}
+            onChange={(e) => setTestPhone(e.target.value)}
+            placeholder="내 번호 (010…)"
+            inputMode="numeric"
+            className="nb-input"
+            style={{ width: "auto", flex: 1, minWidth: 0 }}
+          />
+          <button type="button" onClick={test} disabled={testing} className="nb-btn nb-btn-sm shrink-0">
+            {testing ? "…" : "테스트 발송"}
+          </button>
+        </div>
+        {testMsg && <p className="mt-1 font-bold text-slate-700">{testMsg}</p>}
+      </details>
+    </div>
+  );
+}
+
 function Row({ row, href, done, current }: { row: SendRow; href: string; done?: boolean; current?: boolean }) {
   const [copied, setCopied] = useState<"ok" | "fail" | null>(null);
   const [open, setOpen] = useState(false);
@@ -88,6 +230,11 @@ function Row({ row, href, done, current }: { row: SendRow; href: string; done?: 
           </span>
           <span className="ml-2 text-xs font-bold text-slate-500">{formatPhone(row.phone)}</span>
         </div>
+        {row.autoSent && (
+          <span className="nb-tag shrink-0" style={{ background: "#c7f0d8" }}>
+            📡 {row.autoSent}
+          </span>
+        )}
         {row.redeemed > 0 ? (
           <span className="nb-tag bg-[#ff5d8f] text-white shrink-0">사용 {row.redeemed}</span>
         ) : row.viewed > 0 ? (

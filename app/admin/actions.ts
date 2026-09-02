@@ -10,6 +10,7 @@ import { kstEndOfDay } from "@/lib/kst";
 import { messageForCampaign } from "@/lib/message";
 import { presetByCampaignName, expiryFrom } from "@/lib/weekly";
 import { checkPassword, setSession, clearSession, isAuthed } from "@/lib/auth";
+import { gatewaySend } from "@/lib/smsgate";
 
 export async function adminLogin(_prev: unknown, formData: FormData) {
   const password = String(formData.get("password") ?? "");
@@ -337,6 +338,57 @@ export async function prepareCouponSend(formData: FormData): Promise<CouponSendP
   );
 
   return { ok: true, phone, message };
+}
+
+// 폰 게이트웨이 자동발송 — 한 사람(번호) 몫의 쿠폰을 한 통으로 큐에 넣는다.
+// 발송 화면의 사람별 묶음과 같은 규칙으로 본문을 만든다(쿠폰 여러 장이면 링크 여러 줄).
+export type AutoSendResult = { ok: true } | { ok: false; error: string };
+
+export async function autoSendPerson(formData: FormData): Promise<AutoSendResult> {
+  if (!(await isAuthed("admin"))) return { ok: false, error: "인증이 필요합니다." };
+
+  const campaignId = String(formData.get("campaignId") ?? "");
+  const phone = String(formData.get("phone") ?? "");
+  if (!campaignId || !phone) return { ok: false, error: "대상을 찾을 수 없습니다." };
+
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    include: { coupons: { where: { sentTo: phone }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
+  });
+  if (!campaign || campaign.coupons.length === 0) return { ok: false, error: "쿠폰을 찾을 수 없습니다." };
+
+  const preset = presetByCampaignName(campaign.name);
+  const name = campaign.coupons.find((c) => c.sentName)?.sentName ?? null;
+  const items = campaign.coupons.map((c) => ({
+    label: preset?.keyring ?? campaign.benefit,
+    link: couponUrl(c.id),
+  }));
+  const message = messageForCampaign(campaign, name, items, campaign.coupons[campaign.coupons.length - 1].expiresAt);
+
+  try {
+    const msgId = await gatewaySend(phone, message);
+    await prisma.coupon.updateMany({
+      where: { campaignId, sentTo: phone },
+      data: { gwSentAt: new Date(), gwMessageId: msgId || null },
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "발송 실패" };
+  }
+  revalidatePath(`/admin/dispatch/${campaignId}`);
+  return { ok: true };
+}
+
+// 게이트웨이 연결 테스트 — 입력한 번호로 테스트 문자 1건 (쿠폰과 무관, DB에 안 남김)
+export async function testGatewaySend(formData: FormData): Promise<AutoSendResult> {
+  if (!(await isAuthed("admin"))) return { ok: false, error: "인증이 필요합니다." };
+  const [phone] = normalizePhones([String(formData.get("phone") ?? "")]);
+  if (!phone) return { ok: false, error: "번호를 다시 확인해 주세요. (숫자 9~11자리)" };
+  try {
+    await gatewaySend(phone, "[FANTASTRICK] 쿠폰 발행기 자동발송 테스트 문자입니다. 이 문자가 보이면 연결 성공!");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "발송 실패" };
+  }
+  return { ok: true };
 }
 
 export async function deleteCampaign(formData: FormData) {
