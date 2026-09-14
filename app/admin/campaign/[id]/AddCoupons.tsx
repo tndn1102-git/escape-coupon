@@ -56,9 +56,19 @@ export default function AddCoupons({ id, expiresLabel }: { id: string; expiresLa
               한 줄에 한 명씩. <b className="text-black">이름을 앞에 쓰면</b> 문자에 「홍길동님」으로 나갑니다. 이름 없이
               번호만 써도 됩니다.
               <br />
-              <b className="text-black">이미 발급된 번호는 건너뜁니다</b> — 같은 명단을 다시 넣어도 중복 발급되지
-              않아요(건너뛴 쿠폰은 원래 기간 그대로).
+              <b className="text-black">같은 사람을 두 줄 쓰면 2장</b> 발급됩니다.
+              <br />
+              이미 미사용 쿠폰이 있는 번호는 건너뜁니다 — 같은 명단을 다시 넣어도 중복 발급되지 않아요.
             </p>
+            <label className="flex items-start gap-2 text-sm font-bold text-[#111] cursor-pointer">
+              <input type="checkbox" name="allowExtra" value="1" className="mt-1" />
+              <span>
+                이미 받은 사람에게도 한 장 더 발급
+                <span className="block text-xs font-normal text-slate-600">
+                  이벤트에 또 참여한 손님처럼, 기존 쿠폰이 있어도 줄 수만큼 새로 만듭니다.
+                </span>
+              </span>
+            </label>
           </>
         ) : (
           <>
@@ -90,6 +100,12 @@ export default function AddCoupons({ id, expiresLabel }: { id: string; expiresLa
             발행 완료 — 새로 {state.added}장
             {state.skipped ? `, 건너뜀 ${state.skipped}장` : ""}
           </p>
+          {state.skipped ? (
+            <p className="text-xs font-bold text-slate-700">
+              건너뛴 건 이미 미사용 쿠폰이 있는 번호예요. 한 장 더 주려면 「이미 받은 사람에게도 한 장 더 발급」을
+              체크하고 다시 발행하세요.
+            </p>
+          ) : null}
           {state.labels && state.labels.length > 0 && (
             <p className="text-xs text-slate-600">{state.labels.join(" · ")}</p>
           )}

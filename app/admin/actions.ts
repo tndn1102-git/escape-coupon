@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { newToken, newCodeBatch, couponUrl } from "@/lib/coupon";
-import { ensureCoupon } from "@/lib/issue";
+import { newToken, newCodeBatch, couponUrl, uniqueCode } from "@/lib/coupon";
 import { normalizePhones } from "@/lib/phone";
 import { kstEndOfDay } from "@/lib/kst";
 import { messageForCampaign } from "@/lib/message";
@@ -168,16 +167,25 @@ export async function addCoupons(_prev: unknown, formData: FormData): Promise<Ad
   if (lines.length === 0) return { error: "추가할 명단을 입력하세요." };
   if (lines.length > 300) return { error: "한 번에 최대 300줄까지 가능합니다." };
 
+  // 체크하면 이미 미사용 쿠폰이 있는 번호에도 줄 수만큼 새로 발급한다(이벤트 두 번 참여 등)
+  const allowExtra = String(formData.get("allowExtra") ?? "") === "1";
+
   const invalid: string[] = [];
-  const targets = new Map<string, { name: string | null; phone: string }>();
+  // 같은 번호가 여러 줄이면 줄 수 = 발급 장수 (이름은 먼저 나온 값)
+  const targets = new Map<string, { name: string | null; phone: string; count: number }>();
   for (const line of lines) {
     const parsed = parseLine(line);
     if (!parsed) {
       invalid.push(line);
       continue;
     }
-    // 같은 번호가 두 줄에 나오면 한 명으로 (이름은 먼저 나온 값)
-    if (!targets.has(parsed.phone)) targets.set(parsed.phone, parsed);
+    const prev = targets.get(parsed.phone);
+    if (prev) {
+      prev.count++;
+      if (!prev.name && parsed.name) prev.name = parsed.name;
+    } else {
+      targets.set(parsed.phone, { ...parsed, count: 1 });
+    }
   }
   if (targets.size === 0) return { error: "유효한 전화번호가 없습니다.", invalid };
 
@@ -185,17 +193,34 @@ export async function addCoupons(_prev: unknown, formData: FormData): Promise<Ad
   let skipped = 0;
   const labels: string[] = [];
   for (const t of targets.values()) {
-    const { created } = await ensureCoupon({
-      campaignId,
-      phone: t.phone,
-      name: t.name,
-      expiresAt,
+    const existing = await prisma.coupon.count({
+      where: { campaignId, sentTo: t.phone, status: "issued" },
     });
-    if (created) {
+    // 기본은 "이 번호가 미사용 쿠폰을 줄 수만큼 갖게" — 같은 명단을 다시 넣어도 늘지 않는다.
+    const toCreate = allowExtra ? t.count : Math.max(0, t.count - existing);
+    skipped += t.count - toCreate;
+
+    // 건너뛴 기존 쿠폰에 이름이 비어 있으면 채운다(이름 없이 먼저 발급한 경우 보정)
+    if (existing > 0 && t.name) {
+      await prisma.coupon.updateMany({
+        where: { campaignId, sentTo: t.phone, status: "issued", sentName: null },
+        data: { sentName: t.name },
+      });
+    }
+
+    for (let i = 0; i < toCreate; i++) {
+      await prisma.coupon.create({
+        data: {
+          id: newToken(),
+          code: await uniqueCode(),
+          campaignId,
+          expiresAt,
+          sentTo: t.phone,
+          sentName: t.name,
+        },
+      });
       added++;
       labels.push(t.name ?? t.phone);
-    } else {
-      skipped++;
     }
   }
 
