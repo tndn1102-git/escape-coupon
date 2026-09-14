@@ -44,12 +44,19 @@ export async function POST(request: Request) {
   }
   const benefit = coupon.benefitOverride ?? coupon.campaign.benefit;
 
-  if (coupon.status === "redeemed") {
-    return NextResponse.json({
+  // 이미 사용된 쿠폰 — 직원이 "방금 처리된 건지, 예전에 쓴 건지" 구분할 수 있게 시각·호점을 같이 준다
+  const alreadyUsed = (c: { redeemedAt: Date | null; store: { name: string } | null }) =>
+    NextResponse.json({
       ok: false,
-      message: `이미 사용된 쿠폰입니다 (${coupon.store?.name ?? "-"})`,
+      used: true,
+      message: "이미 사용된 쿠폰입니다",
+      redeemedAt: c.redeemedAt?.toISOString() ?? null,
+      redeemedStore: c.store?.name ?? null,
       benefit,
     });
+
+  if (coupon.status === "redeemed") {
+    return alreadyUsed(coupon);
   }
   if (coupon.expiresAt && new Date(coupon.expiresAt) < new Date()) {
     return NextResponse.json({ ok: false, message: "유효기간이 만료된 쿠폰입니다." });
@@ -108,7 +115,12 @@ export async function POST(request: Request) {
     },
   });
   if (result.count === 0) {
-    return NextResponse.json({ ok: false, message: "이미 사용 처리된 쿠폰입니다.", benefit });
+    // 동시 스캔에서 한발 늦은 요청 — 먼저 처리된 기록을 다시 읽어 시각을 보여준다
+    const used = await prisma.coupon.findUnique({
+      where: { id: coupon.id },
+      select: { redeemedAt: true, store: { select: { name: true } } },
+    });
+    return alreadyUsed(used ?? { redeemedAt: null, store: null });
   }
 
   // 기능10: 활동 로그

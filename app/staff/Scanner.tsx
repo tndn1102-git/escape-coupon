@@ -2,6 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
+import { fmtKSTFull } from "@/lib/restrict";
+
+// "3분 전" 같은 상대 표기 — 1시간 넘은 건 날짜만으로 충분해 생략
+function agoLabel(iso: string) {
+  const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (sec < 60) return "방금 전";
+  if (sec < 3600) return `${Math.floor(sec / 60)}분 전`;
+  return "";
+}
 
 type Need = { people: boolean; theme: boolean };
 type Result = {
@@ -14,6 +23,9 @@ type Result = {
   excludeTheme?: string;
   themes?: string[];
   needLogin?: boolean;
+  used?: boolean;
+  redeemedAt?: string | null;
+  redeemedStore?: string | null;
 };
 
 export default function Scanner() {
@@ -82,7 +94,10 @@ export default function Scanner() {
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 240, height: 240 } },
         async (decoded) => {
+          // 한 번 비출 때 같은 QR이 연달아 읽힌다. await 전에 막아야 두 번째 요청이
+          // 첫 요청의 "사용 처리 완료"를 "이미 사용됨"으로 덮어쓰지 않는다.
           if (busyRef.current) return;
+          busyRef.current = true;
           await qr.pause(true);
           await redeem(decoded);
         },
@@ -198,6 +213,19 @@ export default function Scanner() {
             {result.ok ? "✓" : "✕"}
           </div>
           <div className="mt-1 font-extrabold text-[#111]">{result.message}</div>
+          {result.used && (
+            <div className="mt-2 rounded-xl border-2 border-black bg-white px-3 py-2 text-[#111]">
+              <div className="text-xs font-bold">사용 시각</div>
+              {/* 날짜가 "오후 / 03:32"로 끊기지 않게 한 줄 고정, 상대시각은 아래 줄로 */}
+              <div className="font-extrabold whitespace-nowrap">
+                {result.redeemedAt ? fmtKSTFull(result.redeemedAt) : "기록 없음"}
+              </div>
+              {result.redeemedAt && agoLabel(result.redeemedAt) && (
+                <div className="text-sm font-extrabold">{agoLabel(result.redeemedAt)} 처리됨</div>
+              )}
+              {result.redeemedStore && <div className="text-sm font-bold">{result.redeemedStore}</div>}
+            </div>
+          )}
           {result.benefit && <div className="mt-1 font-bold text-[#111]">{result.benefit}</div>}
           {result.needLogin ? (
             <a href="/staff/login" className="nb-btn nb-btn-dark w-full mt-4 text-center">
