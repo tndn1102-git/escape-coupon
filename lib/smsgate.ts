@@ -30,7 +30,8 @@ export async function gatewaySend(phone: string, text: string): Promise<string> 
       phoneNumbers: [e164(phone)],
       // 폰이 꺼져 있는 등으로 하루 안에 못 보내면 폐기 — 며칠 지난 문자가 뒤늦게 나가는 사고 방지
       ttl: 86400,
-      withDeliveryReport: false,
+      // 도착 보고를 받아야 "전송 결과 확인"에서 Delivered(상대 폰 도착)까지 구분된다
+      withDeliveryReport: true,
     }),
   });
   if (!res.ok) {
