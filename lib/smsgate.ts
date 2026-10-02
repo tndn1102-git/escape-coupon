@@ -40,3 +40,22 @@ export async function gatewaySend(phone: string, text: string): Promise<string> 
   const data = (await res.json()) as { id?: string };
   return data.id ?? "";
 }
+
+export type GatewayState = "Pending" | "Processed" | "Sent" | "Delivered" | "Failed";
+
+// 큐에 넣은 문자 1건의 현재 상태. 폰이 실제로 보냈는지(Sent/Delivered), 실패했는지(Failed)와 실패 사유.
+// 통신사가 잠깐 막으면(RESULT_ERROR_NO_SERVICE) 큐에선 Failed로 끝나고 자동 재시도는 없다 — 그래서 서버가 확인해 되돌려야 한다.
+export async function gatewayMessageState(id: string): Promise<{ state: GatewayState; error: string | null }> {
+  const login = process.env.SMSGATE_LOGIN;
+  const password = process.env.SMSGATE_PASSWORD;
+  if (!login || !password) throw new Error("게이트웨이가 설정되지 않았습니다. (SMSGATE_LOGIN/PASSWORD)");
+
+  const res = await fetch(`${API}/${encodeURIComponent(id)}`, {
+    headers: { authorization: `Basic ${Buffer.from(`${login}:${password}`).toString("base64")}` },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`게이트웨이 오류 ${res.status}`);
+  const data = (await res.json()) as { state?: GatewayState; recipients?: { error?: string | null }[] };
+  const error = data.recipients?.find((r) => r.error)?.error ?? null;
+  return { state: data.state ?? "Pending", error };
+}

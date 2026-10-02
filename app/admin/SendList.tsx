@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { copyText } from "@/lib/clipboard";
 import { formatPhone } from "@/lib/kst";
 import { smsHref } from "@/lib/sms";
-import { autoSendPerson, testGatewaySend } from "./actions";
+import { autoSendPerson, syncGatewayFailures, testGatewaySend } from "./actions";
 
 export type SendItem = { label: string; link: string; code: string | null };
 export type SendRow = {
@@ -93,9 +94,39 @@ function AutoSend({ campaignId, rows }: { campaignId: string; rows: SendRow[] })
   const [testPhone, setTestPhone] = useState("");
   const [testMsg, setTestMsg] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const router = useRouter();
 
   const pending = rows.filter((r) => !r.autoSent && !sentNow[r.phone]);
   const failed = rows.filter((r) => errors[r.phone]);
+  const queued = rows.filter((r) => r.autoSent).length; // 큐에 넣은 적 있는 사람(새로고침 기준)
+
+  // 폰이 실제로 보냈는지 게이트웨이에 물어보고, 실패한 사람은 미발송으로 되돌린다
+  async function sync() {
+    setSyncing(true);
+    setSyncMsg(null);
+    const fd = new FormData();
+    fd.set("campaignId", campaignId);
+    try {
+      const res = await syncGatewayFailures(fd);
+      if (!res.ok) setSyncMsg(`❌ ${res.error}`);
+      else {
+        const parts = [`전송 완료 ${res.sent}명`, `대기 중 ${res.pending}명`, `실패 ${res.failed}명`];
+        setSyncMsg(
+          `${parts.join(" · ")}${res.failed > 0 ? ` → 실패한 ${res.failed}명은 미발송으로 되돌렸습니다. 아래 "전체 자동발송"으로 다시 보내세요.` : ""}${
+            res.reasons.length ? `\n사유: ${res.reasons.join(", ")}` : ""
+          }`,
+        );
+        setSentNow({});
+        setPhase("idle");
+        router.refresh();
+      }
+    } catch {
+      setSyncMsg("❌ 네트워크 오류");
+    }
+    setSyncing(false);
+  }
 
   async function run(targets: SendRow[]) {
     setPhase("running");
@@ -186,6 +217,15 @@ function AutoSend({ campaignId, rows }: { campaignId: string; rows: SendRow[] })
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {queued > 0 && phase !== "running" && (
+        <div className="space-y-1">
+          <button type="button" onClick={sync} disabled={syncing} className="nb-btn nb-btn-sm w-full">
+            {syncing ? "폰 전송 결과 확인 중…" : `🔄 폰 전송 결과 확인 (${queued}명) · 실패 건 재발송 준비`}
+          </button>
+          {syncMsg && <p className="text-xs font-bold text-slate-700 whitespace-pre-line">{syncMsg}</p>}
         </div>
       )}
 

@@ -9,7 +9,7 @@ import { kstEndOfDay } from "@/lib/kst";
 import { messageForCampaign } from "@/lib/message";
 import { presetByCampaignName, expiryFrom } from "@/lib/weekly";
 import { checkPassword, setSession, clearSession, isAuthed } from "@/lib/auth";
-import { gatewaySend } from "@/lib/smsgate";
+import { gatewayMessageState, gatewaySend } from "@/lib/smsgate";
 
 export async function adminLogin(_prev: unknown, formData: FormData) {
   const password = String(formData.get("password") ?? "");
@@ -401,6 +401,63 @@ export async function autoSendPerson(formData: FormData): Promise<AutoSendResult
   }
   revalidatePath(`/admin/dispatch/${campaignId}`);
   return { ok: true };
+}
+
+// 폰 전송 결과 동기화 — 큐에 넣었던 건을 게이트웨이에서 조회해, 폰이 실패(Failed)로 끝낸 사람은
+// gwSentAt을 지워 "미발송"으로 되돌린다 → 다시 "전체 자동발송"을 누르면 그 사람들만 나간다.
+// 통신사가 연속 발송을 잠깐 막으면(NO_SERVICE) 수십 건이 한꺼번에 Failed로 떨어지는데 큐는 재시도하지 않는다.
+export type GatewaySyncResult =
+  | { ok: true; checked: number; sent: number; pending: number; failed: number; reasons: string[] }
+  | { ok: false; error: string };
+
+export async function syncGatewayFailures(formData: FormData): Promise<GatewaySyncResult> {
+  if (!(await isAuthed("admin"))) return { ok: false, error: "인증이 필요합니다." };
+  const campaignId = String(formData.get("campaignId") ?? "");
+  if (!campaignId) return { ok: false, error: "캠페인을 찾을 수 없습니다." };
+
+  const coupons = await prisma.coupon.findMany({
+    where: { campaignId, gwMessageId: { not: null } },
+    select: { gwMessageId: true },
+  });
+  const ids = [...new Set(coupons.map((c) => c.gwMessageId).filter((id): id is string => Boolean(id)))];
+
+  let sent = 0;
+  let pending = 0;
+  const failedIds: string[] = [];
+  const reasonCount = new Map<string, number>();
+  try {
+    // 게이트웨이 API를 한꺼번에 두드리지 않게 5개씩
+    for (let i = 0; i < ids.length; i += 5) {
+      const batch = ids.slice(i, i + 5);
+      const states = await Promise.all(batch.map((id) => gatewayMessageState(id)));
+      states.forEach((s, j) => {
+        if (s.state === "Failed") {
+          failedIds.push(batch[j]);
+          const key = (s.error ?? "알 수 없는 오류").replace(/^Send result: /, "").slice(0, 80);
+          reasonCount.set(key, (reasonCount.get(key) ?? 0) + 1);
+        } else if (s.state === "Sent" || s.state === "Delivered") sent++;
+        else pending++;
+      });
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "게이트웨이 조회 실패" };
+  }
+
+  if (failedIds.length > 0) {
+    await prisma.coupon.updateMany({
+      where: { campaignId, gwMessageId: { in: failedIds } },
+      data: { gwSentAt: null, gwMessageId: null },
+    });
+  }
+  revalidatePath(`/admin/dispatch/${campaignId}`);
+  return {
+    ok: true,
+    checked: ids.length,
+    sent,
+    pending,
+    failed: failedIds.length,
+    reasons: [...reasonCount].map(([k, v]) => `${k} ×${v}`),
+  };
 }
 
 // 게이트웨이 연결 테스트 — 입력한 번호로 테스트 문자 1건 (쿠폰과 무관, DB에 안 남김)
