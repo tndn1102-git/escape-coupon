@@ -61,7 +61,11 @@ export function birthdayNotice(month: string) {
 }
 
 // 받는 사람 한 명에게 나갈 문자 한 통.
-// 문자에는 화면과 달리 실제 만료일을 붙여 기한을 분명히 한다.
+// ⚠️ 200자 안쪽으로 유지할 것(2026-10-03 사용자 결정). 한글 문자는 67자마다 한 통으로 쪼개져 통신사 일 한도(500통)를
+// 먹는다 — 옛 문구 421자 = 7통/명이라 62명에 434통을 써 "일 400건 소진" 경고가 왔다. 200자 = 3통/명 → 하루 160명.
+// 긴 안내문은 쿠폰 화면(birthdayNoticeLines)에 그대로 있으니 문자는 링크로 보내는 역할만 한다.
+export const BIRTHDAY_SMS_MAX = 200;
+
 export function buildBirthdayMessage(
   name: string | null | undefined,
   link: string,
@@ -69,18 +73,15 @@ export function buildBirthdayMessage(
   expiresAt: Date | string | null | undefined,
 ) {
   const who = name ? `${name}님` : "고객님";
-  const notices = birthdayNoticeLines(month);
-  notices[notices.length - 1] += ` (~ ${fmtKSTDate(expiresAt)})`;
+  const m = monthLabel(month);
+  // "2026. 10. 31." → "10/31"
+  const until = fmtKSTDate(expiresAt).replace(/^\d{4}\. (\d{1,2})\. (\d{1,2})\.$/, "$1/$2");
 
   return [
-    birthdayTitle(month),
-    "",
-    `${who}의 생일을 FANTASTRICK이 축하드립니다!`,
-    "",
-    "생일을 기념하여 한달동안 사용할 수 있는 쿠폰을 보내드립니다. FANTASTRICK에서 즐거운 순간을 경험하고 행복한 생일을 보내시기 바랍니다. 감사합니다",
-    "",
+    `[FANTASTRICK] ${m}월 생일축하 쿠폰`,
+    `${who}, 생일 축하드립니다! 테마 택1 5,000원 할인쿠폰을 드려요.`,
     link,
-    "",
-    ...notices.map((n) => `* ${n}`),
+    `판타스트릭1·2·TGC점 사용 · 매장에서 직원에게 제시 · ~${until}까지`,
+    `* 마케팅 동의 고객 중 ${m}월 생일자 대상`,
   ].join("\n");
 }
