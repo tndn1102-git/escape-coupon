@@ -15,12 +15,11 @@ import { prisma } from "@/lib/db";
 import { couponUrl } from "@/lib/coupon";
 import { normalizePhones } from "@/lib/phone";
 import { fmtKSTDate } from "@/lib/kst";
-import { authorizeSecret, collectStale, ensureCoupon, purgeStale } from "@/lib/issue";
+import { authorizeSecret, ensureCoupon } from "@/lib/issue";
 import {
   WEEKLY_PRESETS,
   WEEKLY_TITLE,
   WEEKLY_NOTICE,
-  RETENTION_WEEKS,
   buildMessage,
   campaignName,
   expiryFrom,
@@ -103,8 +102,6 @@ export async function POST(request: Request) {
   const now = new Date();
   const week = weekKey(now);
 
-  const { stale, plan: purgePlan } = await collectStale(now);
-
   // 이번 주 명단에 실제로 등장한 종류만 캠페인을 만든다
   const used = WEEKLY_PRESETS.filter((p) => targets.some((t) => t.presets.some((x) => x.key === p.key)));
 
@@ -129,7 +126,6 @@ export async function POST(request: Request) {
           expiresAt: fmtKSTDate(found?.expiresAt ?? expiryFrom(now)),
         };
       }),
-      willPurge: purgePlan,
     });
   }
 
@@ -190,8 +186,6 @@ export async function POST(request: Request) {
     });
   }
 
-  await purgeStale(stale, purgePlan);
-
   return NextResponse.json({
     ok: true,
     week,
@@ -206,7 +200,5 @@ export async function POST(request: Request) {
     issued,
     reused,
     rows,
-    purged: purgePlan,
-    retentionWeeks: RETENTION_WEEKS,
   });
 }

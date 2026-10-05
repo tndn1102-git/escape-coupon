@@ -1,10 +1,9 @@
-// 발행 API(/api/weekly, /api/birthday)가 공유하는 인증·보관정리·쿠폰 발급 로직.
+// 발행 API(/api/weekly, /api/birthday)가 공유하는 인증·쿠폰 발급 로직.
+// 만료 캠페인 자동 삭제(보관정리)는 2026-10-06 사용자 지시로 없앴다 — 캠페인 삭제는 사용자가 요청할 때만 한다.
 
 import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/db";
 import { newToken, uniqueCode } from "@/lib/coupon";
-import { fmtKSTDate } from "@/lib/kst";
-import { retentionCutoff } from "@/lib/weekly";
 
 // 시크릿 미설정이면 무조건 거부한다(기본값을 두면 공개 엔드포인트가 되므로).
 export function authorizeSecret(request: Request) {
@@ -14,35 +13,6 @@ export function authorizeSecret(request: Request) {
   const given = Buffer.from(header.startsWith("Bearer ") ? header.slice(7) : "");
   const expected = Buffer.from(secret);
   return given.length === expected.length && timingSafeEqual(given, expected);
-}
-
-export type PurgeEntry = { name: string; total: number; used: number; expiredAt: string };
-
-// 만료일이 보관기간을 넘긴 캠페인을 찾는다. 만료일이 없는(무기한) 캠페인은 lt 비교에서 제외된다.
-export async function collectStale(now: Date) {
-  const stale = await prisma.campaign.findMany({
-    where: { expiresAt: { lt: retentionCutoff(now) } },
-    select: { id: true, name: true, expiresAt: true, coupons: { select: { status: true } } },
-  });
-  const plan: PurgeEntry[] = stale.map((c) => ({
-    name: c.name,
-    total: c.coupons.length,
-    used: c.coupons.filter((x) => x.status === "redeemed").length,
-    expiredAt: fmtKSTDate(c.expiresAt),
-  }));
-  return { stale, plan };
-}
-
-// 쿠폰은 onDelete: Cascade로 함께 지워지고, 요약 한 줄만 로그에 남긴다.
-export async function purgeStale(stale: { id: string; name: string }[], plan: PurgeEntry[]) {
-  for (const c of stale) {
-    const p = plan.find((x) => x.name === c.name);
-    if (!p) continue;
-    await prisma.log.create({
-      data: { type: "purge", detail: `${c.name} 정리 — 발급 ${p.total} / 사용 ${p.used} (만료 ${p.expiredAt})` },
-    });
-    await prisma.campaign.delete({ where: { id: c.id } });
-  }
 }
 
 // 같은 캠페인에 같은 번호의 미사용 쿠폰이 있으면 재사용한다(중복 발급 방지).

@@ -14,7 +14,7 @@ import { prisma } from "@/lib/db";
 import { couponUrl } from "@/lib/coupon";
 import { normalizePhones } from "@/lib/phone";
 import { fmtKSTDate } from "@/lib/kst";
-import { authorizeSecret, collectStale, ensureCoupon, purgeStale } from "@/lib/issue";
+import { authorizeSecret, ensureCoupon } from "@/lib/issue";
 import {
   BIRTHDAY_BENEFIT,
   birthdayCampaignName,
@@ -62,12 +62,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: `한 번에 최대 ${MAX_PEOPLE}명까지 가능합니다.` }, { status: 400 });
   }
 
-  const now = new Date();
   const name = birthdayCampaignName(month);
   const title = birthdayTitle(month);
   const notice = birthdayNotice(month);
   const expiresAt = monthEnd(month);
-  const { stale, plan } = await collectStale(now);
 
   if (dryRun) {
     const found = await prisma.campaign.findFirst({ where: { name }, select: { id: true } });
@@ -83,7 +81,6 @@ export async function POST(request: Request) {
         expiresAt: fmtKSTDate(expiresAt),
       },
       people: targets,
-      willPurge: plan,
     });
   }
 
@@ -121,8 +118,6 @@ export async function POST(request: Request) {
     });
   }
 
-  await purgeStale(stale, plan);
-
   return NextResponse.json({
     ok: true,
     month,
@@ -131,6 +126,5 @@ export async function POST(request: Request) {
     issued,
     reused,
     rows,
-    purged: plan,
   });
 }

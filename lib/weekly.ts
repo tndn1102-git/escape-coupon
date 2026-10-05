@@ -1,6 +1,6 @@
 // 매주 정기 발행하는 쿠폰 2종의 설정.
 // 발행(/api/weekly)과 발송 화면(/admin/weekly)이 이 파일을 공유한다.
-// 문구·기한·보관기간을 바꾸려면 여기만 고치면 된다.
+// 문구·기한을 바꾸려면 여기만 고치면 된다.
 
 import { fmtKSTDate, kstEndOfDay, toKST } from "@/lib/kst";
 
@@ -45,9 +45,6 @@ export const WEEKLY_NOTICE = `${PICKUP_NOTICE}\n${EXPIRY_NOTICE}`;
 // 쿠폰 사용기한 — 발급일로부터 1개월
 export const VALID_MONTHS = 1;
 
-// 보관 정책 — 만료일이 이만큼 지난 캠페인은 쿠폰과 함께 삭제한다(요약만 Log에 남김)
-export const RETENTION_WEEKS = 4;
-
 // 이번 주 월요일(KST)을 YYYY-MM-DD로. 같은 주에 두 번 실행해도 같은 캠페인을 쓰게 하는 키.
 export function weekKey(now = new Date()) {
   const k = toKST(now);
@@ -67,11 +64,6 @@ export function expiryFrom(now = new Date()) {
   const target = m + VALID_MONTHS;
   const lastDay = new Date(Date.UTC(y, target + 1, 0)).getUTCDate();
   return kstEndOfDay(y, target, Math.min(k.getUTCDate(), lastDay));
-}
-
-// 이 시각보다 만료일이 오래된 캠페인이 정리 대상
-export function retentionCutoff(now = new Date()) {
-  return new Date(now.getTime() - RETENTION_WEEKS * 7 * 86400_000);
 }
 
 export function campaignName(preset: WeeklyPreset, week: string) {
