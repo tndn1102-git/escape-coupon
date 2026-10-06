@@ -94,6 +94,12 @@ export function buildMessage(
   return `${who}, 리뷰 감사합니다!\n${DISCOUNT_TEXT} 쿠폰 ${items.length}장이 도착했어요.\n\n${list}\n\n${tail}`;
 }
 
+// 상시 캠페인명 — 주차 없이 계속 쓰는 키링 캠페인(/api/keyring-campaigns).
+// 끝이 preset.label이어야 presetByCampaignName이 알아보고 키링 문자 문구로 보낸다.
+export function standingCampaignName(preset: WeeklyPreset) {
+  return `5,000원 할인 · ${preset.label}`;
+}
+
 // 캠페인명(관리용)에서 키링 종류를 되찾는다. 발송 화면이 쿠폰→키링명을 알아내는 데 쓴다.
 export function presetByCampaignName(name: string) {
   return WEEKLY_PRESETS.find((p) => name.endsWith(p.label)) ?? null;
